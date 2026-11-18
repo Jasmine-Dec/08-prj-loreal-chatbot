@@ -92,6 +92,8 @@ body {
 
 /* messages (distinct conversation bubbles) */
 .msg {
+  flex-shrink: 0;
+  min-width: 0;
   max-width: 78%;
   padding: 12px 16px;
   border-radius: 18px;
@@ -112,6 +114,7 @@ body {
 
 .msg-text {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* User bubble aligned right */

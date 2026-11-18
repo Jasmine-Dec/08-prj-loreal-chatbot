@@ -24,7 +24,7 @@ const MAX_HISTORY_MESSAGES = 20;
 // Build the system prompt dynamically with remembered user details and past questions
 function buildSystemPrompt() {
   let prompt =
-    "You are a helpful L'Oréal beauty advisor. Help users discover L'Oréal makeup, skincare, haircare, and fragrance products and build personalized routines. Track the full context of the conversation—including the user's name, preferences, and earlier questions—so follow-up replies feel natural and personalized.";
+    "You are a helpful L'Oréal beauty advisor. Help users discover L'Oréal makeup, skincare, haircare, and fragrance products and build personalized routines. Track the full context of the conversation—including the user's name, preferences, and earlier questions—so follow-up replies feel natural and personalized. Keep your responses concise, well-structured, and complete within about 150–200 words so they never cut off mid-sentence.";
 
   if (conversationState.userName) {
     prompt += ` The user's name is ${conversationState.userName}.`;
@@ -166,41 +166,72 @@ chatForm.addEventListener("submit", async (e) => {
   // Show a temporary loading bubble while waiting for the API response
   const responseEl = addMessage("ai", "Thinking...", true);
 
-  try {
-    // Send the full conversation history to the Cloudflare Worker
+  // Helper to send a messages array to the Cloudflare Worker and return the choice text + finishReason
+  async function requestCompletion(messageList) {
     const response = await fetch(workerUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-4.1",
-        messages: getMessagesForRequest(),
+        messages: messageList,
       }),
     });
 
-    // Check if the HTTP request succeeded
     if (!response.ok) {
       throw new Error(`Request failed with status ${response.status}`);
     }
 
-    // Parse the JSON response and extract the assistant's reply
     const data = await response.json();
 
-    // Surface API errors if the Worker returned an OpenAI error object
     if (data.error?.message) {
       throw new Error(data.error.message);
     }
 
-    const reply = data.choices?.[0]?.message?.content;
+    const choice = data.choices?.[0];
+    const text = choice?.message?.content;
 
-    if (!reply) {
+    if (!text) {
       throw new Error("No reply returned from the API.");
     }
 
-    // Replace the loading message with the formatted chatbot response and scroll into view
-    renderMessage(responseEl, "ai", reply);
+    return {
+      text,
+      finishReason: choice.finish_reason,
+    };
+  }
 
-    // Save the assistant's reply to the conversation history for future turns
-    messages.push({ role: "assistant", content: reply });
+  try {
+    // Send the full conversation history to the Cloudflare Worker
+    const requestMessages = getMessagesForRequest();
+    let result = await requestCompletion(requestMessages);
+    let fullReply = result.text;
+
+    // If the Worker's max_completion_tokens limit cut off the reply, seamlessly fetch the rest
+    let continuations = 0;
+    while (result.finishReason === "length" && continuations < 2) {
+      continuations += 1;
+      renderMessage(responseEl, "ai", `${fullReply} ...`);
+
+      const continuationMessages = [
+        ...requestMessages,
+        { role: "assistant", content: fullReply },
+        {
+          role: "user",
+          content:
+            "Continue directly from your exact last word without repeating earlier text, and finish your answer concisely.",
+        },
+      ];
+
+      result = await requestCompletion(continuationMessages);
+      const separator = /[\s\n]$/.test(fullReply) ? "" : " ";
+      fullReply = `${fullReply}${separator}${result.text.trimStart()}`;
+    }
+
+    // Replace the loading message with the complete chatbot response and scroll into view
+    renderMessage(responseEl, "ai", fullReply);
+
+    // Save the complete assistant reply to the conversation history for future turns
+    messages.push({ role: "assistant", content: fullReply });
   } catch (error) {
     console.error("Error fetching chat response:", error);
 
