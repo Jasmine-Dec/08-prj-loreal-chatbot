@@ -1,3 +1,11 @@
+/* —— brand color palette —— */
+:root {
+  --color-black: #000000;
+  --color-gold: #c09853;
+  --color-white: #ffffff;
+  --color-red: #ff0000;
+}
+
 /* —— basic reset —— */
 * {
   box-sizing: border-box;
@@ -6,9 +14,13 @@
 }
 
 /* —— body + fonts —— */
+/* Note: Add @font-face rules or a licensed webfont link if hosting .woff2 files locally */
 body {
-  font-family: "Montserrat", Arial, Helvetica, sans-serif;
-  color: #333;
+  font-family: "Helvetica Now Display W05 Reg", "Helvetica Now Display",
+    "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-weight: 400;
+  background: var(--color-white);
+  color: var(--color-black);
   display: flex;
   justify-content: center;
 }
@@ -18,15 +30,42 @@ body {
   max-width: 900px;
 }
 
+/* brand logo */
+.logo-container {
+  text-align: center;
+  padding-top: 40px;
+  margin-bottom: 14px;
+}
+
+.logo-container::after {
+  content: "";
+  display: block;
+  width: 56px;
+  height: 2px;
+  background: var(--color-gold);
+  margin: 14px auto 0;
+}
+
+.site-logo {
+  width: 180px;
+  max-width: 60%;
+  height: auto;
+  display: inline-block;
+}
+
 /* header */
 .site-header {
   text-align: center;
-  padding-top: 50px;
+  font-family: "Halesworth eText Medium", "Halesworth eText", Georgia,
+    "Times New Roman", serif;
 }
 
 .site-title {
-  font-size: 22px;
+  font-family: "Halesworth eText Medium", "Halesworth eText", Georgia,
+    "Times New Roman", serif;
+  font-size: 24px;
   font-weight: 500;
+  color: var(--color-black);
   margin-bottom: 10px;
 }
 
@@ -36,28 +75,86 @@ body {
 }
 
 .chat-window {
-  height: 360px;
-  border: 1px solid #000;
+  height: 440px;
+  border: 1.5px solid var(--color-black);
+  border-top: 3px solid var(--color-gold);
+  border-radius: 12px;
   padding: 20px;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.5;
   overflow-y: auto;
-  background: #fafafa;
-  white-space: pre-line;
+  background: var(--color-white);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-/* messages */
+/* messages (distinct conversation bubbles) */
 .msg {
-  margin-bottom: 14px;
+  max-width: 78%;
+  padding: 12px 16px;
+  border-radius: 18px;
   line-height: 1.5;
+  word-wrap: break-word;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
+.msg-sender {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.msg-text {
+  white-space: pre-wrap;
+}
+
+/* User bubble aligned right */
 .msg.user {
-  color: #000;
+  align-self: flex-end;
+  background: var(--color-black);
+  color: var(--color-white);
+  border-bottom-right-radius: 4px;
 }
 
+.msg.user .msg-sender {
+  color: var(--color-gold);
+}
+
+/* Assistant bubble aligned left */
 .msg.ai {
-  color: #666666;
+  align-self: flex-start;
+  background: var(--color-white);
+  color: var(--color-black);
+  border: 1px solid var(--color-gold);
+  border-left: 4px solid var(--color-gold);
+  border-bottom-left-radius: 4px;
+}
+
+.msg.ai .msg-sender {
+  color: var(--color-black);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.msg.ai .msg-sender::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-red);
+  display: inline-block;
+}
+
+.msg.ai.is-loading .msg-text {
+  color: var(--color-gold);
+  font-style: italic;
 }
 
 /* input row */
@@ -69,21 +166,28 @@ body {
 
 .chat-form input {
   flex: 1;
-  padding: 12px;
-  border: 1px solid #ccc;
-  font-size: 18px;
+  padding: 12px 14px;
+  background: var(--color-white);
+  color: var(--color-black);
+  border: 1.5px solid var(--color-black);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 16px;
+  transition: border-color 0.2s, outline-color 0.2s;
 }
 
 .chat-form input:focus {
-  outline: 2px solid #000;
+  border-color: var(--color-gold);
+  outline: 2px solid var(--color-gold);
   outline-offset: 2px;
 }
 
 .chat-form button {
   font-size: 18px;
-  background: #000;
-  color: #fff;
+  background: var(--color-black);
+  color: var(--color-white);
   border: none;
+  border-radius: 8px;
   padding: 12px;
   width: 48px;
   height: 48px;
@@ -91,20 +195,39 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: background 0.25s, color 0.25s;
+}
+
+.chat-form button:disabled {
+  background: var(--color-gold);
+  color: var(--color-white);
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .chat-form button .material-icons {
   font-size: 24px;
 }
 
-.chat-form button:hover {
-  background: #666666;
+.chat-form button:hover:not(:disabled) {
+  background: var(--color-gold);
+  color: var(--color-black);
+}
+
+.chat-form button:active:not(:disabled) {
+  background: var(--color-red);
+  color: var(--color-white);
 }
 
 .chat-form button:focus {
-  outline: 2px solid #000;
+  outline: 2px solid var(--color-gold);
   outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .msg {
+    max-width: 88%;
+  }
 }
 
 /* visually hidden */
@@ -125,7 +248,7 @@ body {
   margin: 60px 0 40px;
   text-align: center;
   font-size: 14px;
-  color: #666;
+  color: var(--color-black);
 }
 
 .site-footer nav {
@@ -134,10 +257,13 @@ body {
 
 .site-footer a {
   margin: 0 8px;
-  color: #000;
+  color: var(--color-black);
   text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
 }
 
 .site-footer a:hover {
-  color: #666666;
+  color: var(--color-red);
+  border-bottom-color: var(--color-red);
 }

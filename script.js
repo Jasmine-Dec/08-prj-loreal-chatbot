@@ -6,16 +6,103 @@ const sendBtn = document.getElementById("sendBtn");
 
 // Replace this URL with your class-hosted Cloudflare Worker URL (see README.md).
 // Never put your OpenAI API key in client-side JavaScript — the Worker stores it safely as a secret.
-const workerUrl = "https://loreal-chatbot.your-subdomain.workers.dev/";
+const workerUrl = "https://lorealchatbot.jasmined1256.workers.dev/";
 
-// Store the conversation history so the assistant remembers context
+// Initial greeting shown when the chat loads
+const initialGreeting =
+  "👋 Hello! How can I help you with L'Oréal products or routines today?";
+
+// Track key details across the conversation so the chatbot remembers context naturally
+const conversationState = {
+  userName: null,
+  pastQuestions: [],
+};
+
+// Maximum number of user/assistant messages to keep in active history
+const MAX_HISTORY_MESSAGES = 20;
+
+// Build the system prompt dynamically with remembered user details and past questions
+function buildSystemPrompt() {
+  let prompt =
+    "You are a helpful L'Oréal beauty advisor. Help users discover L'Oréal makeup, skincare, haircare, and fragrance products and build personalized routines. Track the full context of the conversation—including the user's name, preferences, and earlier questions—so follow-up replies feel natural and personalized.";
+
+  if (conversationState.userName) {
+    prompt += ` The user's name is ${conversationState.userName}.`;
+  }
+
+  if (conversationState.pastQuestions.length > 0) {
+    const recentQuestions = conversationState.pastQuestions
+      .slice(-5)
+      .join(" | ");
+    prompt += ` Earlier user messages in this conversation: ${recentQuestions}.`;
+  }
+
+  return prompt;
+}
+
+// Store the conversation history so the assistant remembers multi-turn context
 const messages = [
   {
     role: "system",
-    content:
-      "You are a helpful L'Oréal beauty advisor. Help users discover L'Oréal makeup, skincare, haircare, and fragrance products and build personalized routines.",
+    content: buildSystemPrompt(),
+  },
+  {
+    role: "assistant",
+    content: initialGreeting,
   },
 ];
+
+// Extract details like the user's name and log past questions from each user turn
+function updateConversationContext(userMessage) {
+  // Look for common ways a user introduces their name
+  const nameMatch = userMessage.match(
+    /(?:my name is|call me|(?:^|[.!?,]\s*)(?:hi|hello|hey)[,!\s]+i(?:'m| am))\s+([A-Za-z][A-Za-z'-]{1,24})\b/i,
+  );
+
+  const nonNames = new Set([
+    "looking",
+    "trying",
+    "interested",
+    "having",
+    "getting",
+    "using",
+    "asking",
+    "wondering",
+    "hoping",
+    "new",
+    "here",
+    "not",
+    "so",
+    "very",
+    "really",
+    "just",
+    "good",
+    "fine",
+  ]);
+
+  if (nameMatch && !nonNames.has(nameMatch[1].toLowerCase())) {
+    const rawName = nameMatch[1];
+    conversationState.userName =
+      rawName.charAt(0).toUpperCase() + rawName.slice(1);
+  }
+
+  // Record each user message so earlier questions remain tracked
+  conversationState.pastQuestions.push(userMessage);
+
+  // Refresh the system prompt with the latest remembered context
+  messages[0].content = buildSystemPrompt();
+}
+
+// Keep the system prompt plus the most recent conversation turns if history grows long
+function getMessagesForRequest() {
+  if (messages.length <= MAX_HISTORY_MESSAGES + 1) {
+    return messages;
+  }
+
+  const systemMessage = messages[0];
+  const recentMessages = messages.slice(-MAX_HISTORY_MESSAGES);
+  return [systemMessage, ...recentMessages];
+}
 
 // Escape HTML characters so user input and API text render safely as plain text
 function escapeHTML(text) {
@@ -24,28 +111,30 @@ function escapeHTML(text) {
   return temp.innerHTML;
 }
 
-// Render a sender label and message body inside a message element
-function renderMessage(messageEl, sender, text) {
+// Render a sender label and message body inside a message bubble element
+function renderMessage(messageEl, sender, text, isLoading = false) {
   const label = sender === "user" ? "You" : "L'Oréal Advisor";
   const cleanText = text.trim();
 
-  messageEl.className = `msg ${sender}`;
-  messageEl.innerHTML = `<strong>${label}:</strong> ${escapeHTML(cleanText)}`;
+  messageEl.className = isLoading
+    ? `msg ${sender} is-loading`
+    : `msg ${sender}`;
+  messageEl.innerHTML = `<span class="msg-sender">${label}</span><div class="msg-text">${escapeHTML(cleanText)}</div>`;
 
-  // Keep the newest response visible in the chat window
+  // Keep the newest message bubble visible at the bottom
   chatWindow.scrollTop = chatWindow.scrollHeight;
 }
 
-// Create and append a new message to the chat window
-function addMessage(sender, text) {
+// Create and append a new message bubble to the chat window
+function addMessage(sender, text, isLoading = false) {
   const messageEl = document.createElement("div");
   chatWindow.appendChild(messageEl);
-  renderMessage(messageEl, sender, text);
+  renderMessage(messageEl, sender, text, isLoading);
   return messageEl;
 }
 
 // Set initial greeting message when the page loads
-addMessage("ai", "👋 Hello! How can I help you with L'Oréal products or routines today?");
+addMessage("ai", initialGreeting);
 
 /* Handle form submit */
 chatForm.addEventListener("submit", async (e) => {
@@ -60,10 +149,11 @@ chatForm.addEventListener("submit", async (e) => {
     return;
   }
 
-  // Display the captured user message clearly in the chat window
+  // Append the user's message bubble to the conversation thread
   addMessage("user", userMessage);
 
-  // Add the user's message to the conversation history
+  // Update tracked context (name, past questions) and add this turn to messages
+  updateConversationContext(userMessage);
   messages.push({ role: "user", content: userMessage });
 
   // Clear the input field and keep focus ready for the next message
@@ -73,17 +163,17 @@ chatForm.addEventListener("submit", async (e) => {
   // Disable the send button while waiting so requests don't overlap
   sendBtn.disabled = true;
 
-  // Show a temporary loading message while waiting for the API response
-  const responseEl = addMessage("ai", "Thinking...");
+  // Show a temporary loading bubble while waiting for the API response
+  const responseEl = addMessage("ai", "Thinking...", true);
 
   try {
-    // Send the messages array to the Cloudflare Worker (which forwards it to OpenAI)
+    // Send the full conversation history to the Cloudflare Worker
     const response = await fetch(workerUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-4.1",
-        messages: messages,
+        messages: getMessagesForRequest(),
       }),
     });
 
@@ -109,10 +199,16 @@ chatForm.addEventListener("submit", async (e) => {
     // Replace the loading message with the formatted chatbot response and scroll into view
     renderMessage(responseEl, "ai", reply);
 
-    // Save the assistant's reply to the conversation history
+    // Save the assistant's reply to the conversation history for future turns
     messages.push({ role: "assistant", content: reply });
   } catch (error) {
     console.error("Error fetching chat response:", error);
+
+    // Remove the failed user message from history so conversation state stays clean
+    messages.pop();
+    conversationState.pastQuestions.pop();
+    messages[0].content = buildSystemPrompt();
+
     renderMessage(
       responseEl,
       "ai",
