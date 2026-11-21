@@ -166,7 +166,14 @@ chatForm.addEventListener("submit", async (e) => {
   // Show a temporary loading bubble while waiting for the API response
   const responseEl = addMessage("ai", "Thinking...", true);
 
-  // Helper to send a messages array to the Cloudflare Worker and return the choice text + finishReason
+  // Helper to roll back the unfulfilled user turn if a request cannot complete
+  function rollbackLastUserTurn() {
+    messages.pop();
+    conversationState.pastQuestions.pop();
+    messages[0].content = buildSystemPrompt();
+  }
+
+  // Helper to send a messages array to the Cloudflare Worker and return the choice or an API error
   async function requestCompletion(messageList) {
     const response = await fetch(workerUrl, {
       method: "POST",
@@ -178,20 +185,27 @@ chatForm.addEventListener("submit", async (e) => {
     });
 
     if (!response.ok) {
-      throw new Error(`Request failed with status ${response.status}`);
+      return {
+        errorMessage: `Request failed with status ${response.status}.`,
+      };
     }
 
     const data = await response.json();
 
     if (data.error?.message) {
-      throw new Error(data.error.message);
+      return {
+        errorCode: data.error.code || "",
+        errorMessage: data.error.message,
+      };
     }
 
     const choice = data.choices?.[0];
     const text = choice?.message?.content;
 
     if (!text) {
-      throw new Error("No reply returned from the API.");
+      return {
+        errorMessage: "No reply returned from the API.",
+      };
     }
 
     return {
@@ -204,6 +218,17 @@ chatForm.addEventListener("submit", async (e) => {
     // Send the full conversation history to the Cloudflare Worker
     const requestMessages = getMessagesForRequest();
     let result = await requestCompletion(requestMessages);
+
+    if (result.errorMessage) {
+      rollbackLastUserTurn();
+      const friendlyMessage =
+        result.errorCode === "expired_secret_key"
+          ? "The OpenAI API key stored in your Cloudflare Worker has expired. Please create a new key and update OPENAI_API_KEY in your Cloudflare Worker settings."
+          : `Chatbot service error: ${result.errorMessage}`;
+      renderMessage(responseEl, "ai", friendlyMessage);
+      return;
+    }
+
     let fullReply = result.text;
 
     // If the Worker's max_completion_tokens limit cut off the reply, seamlessly fetch the rest
@@ -223,6 +248,10 @@ chatForm.addEventListener("submit", async (e) => {
       ];
 
       result = await requestCompletion(continuationMessages);
+      if (result.errorMessage) {
+        break;
+      }
+
       const separator = /[\s\n]$/.test(fullReply) ? "" : " ";
       fullReply = `${fullReply}${separator}${result.text.trimStart()}`;
     }
@@ -233,12 +262,9 @@ chatForm.addEventListener("submit", async (e) => {
     // Save the complete assistant reply to the conversation history for future turns
     messages.push({ role: "assistant", content: fullReply });
   } catch (error) {
-    console.error("Error fetching chat response:", error);
+    console.warn("Unable to reach chatbot service:", error);
 
-    // Remove the failed user message from history so conversation state stays clean
-    messages.pop();
-    conversationState.pastQuestions.pop();
-    messages[0].content = buildSystemPrompt();
+    rollbackLastUserTurn();
 
     renderMessage(
       responseEl,
